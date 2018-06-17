@@ -60,8 +60,7 @@ fn read_line(prompt: &str) -> Result<String> {
     Ok(line.trim().into())
 }
 
-fn get_chosen_example_name(meta_data: &Value) -> Result<String> {
-    let examples = get_example_names(meta_data)?;
+fn let_user_choose_example(examples: Vec<Option<String>>) -> Result<String> {
 
     println!("q) Quit");
 
@@ -88,13 +87,13 @@ fn get_chosen_example_name(meta_data: &Value) -> Result<String> {
                 }
             }
             else {
-                println!("Bad choice, try again.");
+                println!("[cargo demo] Bad choice, try again.");
             }
         }
     }
 }
 
-fn build_and_run_example(example: &str, extra_args: &Vec<String>) -> Result<()> {
+fn build_and_run_example(example: &str, extra_args: &[String]) -> Result<()> {
     let cargo_path = env!("CARGO");
 
     let status = Command::new(cargo_path)
@@ -105,7 +104,7 @@ fn build_and_run_example(example: &str, extra_args: &Vec<String>) -> Result<()> 
 
     if !status.success() {
         match status.code() {
-            Some(exit_code) => eprintln!("Bad cargo exit code: {}", exit_code),
+            Some(exit_code) => eprintln!("[cargo demo] Bad cargo exit code: {}", exit_code),
             None => eprintln!("[cargo demo] Process terminated by signal"),
         }
     }
@@ -131,28 +130,54 @@ fn get_crate_metadata() -> Result<Value> {
 fn main() -> Result<()> {
     setup_panic!();
 
-    let extra_args: Vec<String> = env::args().skip(2).collect();
+    let mut extra_args: Vec<String> = env::args().skip(2).collect();
 
-    println!("extra_args: {:?}", extra_args);
+    let mut run_all_examples = false;
+
+    if let Some(arg) = extra_args.get(0) {
+        if arg.to_lowercase() == "all" {
+            run_all_examples = true;
+        }
+    }
+
+    if run_all_examples {
+        extra_args.remove(0);
+    }
+
+
+    let extra_args = extra_args;
 
     let meta_data = get_crate_metadata();
 
     if let Err(ref e) = &meta_data {
         if let ErrorKind::Io(_) = e.kind() {
-            eprintln!("Command executed with failing error code");
+            eprintln!("[cargo demo] Command executed with failing error code");
         }
     }
 
     let meta_data = meta_data?;
 
-    match get_chosen_example_name(&meta_data) {
-        Ok(ref example_name) => build_and_run_example(example_name, &extra_args),
-        Err(e) => match e.kind() {
-            ErrorKind::UserQuit => {
-                eprintln!("Bye!");
-                return Ok(());
+    let examples = get_example_names(&meta_data)?;
+
+    if !run_all_examples {
+        match let_user_choose_example(examples) {
+            Ok(ref example_name) => build_and_run_example(example_name, &extra_args),
+            Err(e) => match e.kind() {
+                ErrorKind::UserQuit => {
+                    eprintln!("[cargo demo] Bye!");
+                    Ok(())
+                }
+                _ => Err(e)
             }
-            _ => Err(e)
         }
+    }
+    else {
+        for optional_example in &examples {
+            if let Some(example) = optional_example {
+                println!("[cargo demo] Running example: {}", example);
+                build_and_run_example(example, &extra_args)?;
+            }
+        }
+        Ok(())
     }
 }
