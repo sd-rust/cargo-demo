@@ -1,4 +1,7 @@
-#[macro_use] extern crate error_chain;
+#[macro_use]
+extern crate error_chain;
+#[macro_use]
+extern crate human_panic;
 extern crate serde_json;
 
 use serde_json::Value;
@@ -49,22 +52,33 @@ fn list_examples(meta_data: &Value) -> Result<()>{
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn get_crate_metadata() -> Result<Value> {
     let cargo_path = env!("CARGO");
 
     let output = Command::new(cargo_path)
-                    .arg("metadata")
-                    .arg("--format-version").arg("1")
-                    .arg("--no-deps")
-                    .output()?;
+        .arg("metadata")
+        .arg("--format-version").arg("1")
+        .arg("--no-deps")
+        .output()?;
 
-    if !output.status.success() {
-        bail!("Command executed with failing error code");
-    }
 
     let meta_data = String::from_utf8(output.stdout)?;
 
-    let meta_data: Value = serde_json::from_str(&meta_data)?;
+    Ok(serde_json::from_str(&meta_data)?)
+}
+
+fn main() -> Result<()> {
+    setup_panic!();
+
+    let meta_data = get_crate_metadata();
+
+    if let Err(ref e) = &meta_data {
+        if let ErrorKind::Io(_) = e.kind() {
+            eprintln!("Command executed with failing error code");
+        }
+    }
+
+    let meta_data = meta_data?;
 
     list_examples(&meta_data)
 }
