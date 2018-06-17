@@ -61,7 +61,7 @@ fn show_next_window(siv: &mut Cursive, city: &str) {
     );
 }
 
-fn list_examples(meta_data: &Value) -> Result<()>{
+fn list_examples(meta_data: &Value) -> Result<()> {
     let examples = get_example_names(meta_data)?;
 
     for example in &examples {
@@ -91,7 +91,7 @@ fn list_examples(meta_data: &Value) -> Result<()>{
     // Let's add a BoxView to keep the list at a reasonable size
     // (it can scroll anyway).
     siv.add_layer(
-        Dialog::around(select.fixed_size((20, 10)))
+        Dialog::around(select.max_width(50))
             .title("Run example ...")
             .button("Quit", |s| s.quit())
     );
