@@ -1,21 +1,12 @@
-#[macro_use]
-extern crate error_chain;
-#[macro_use]
-extern crate human_panic;
+#[macro_use] extern crate error_chain;
+#[macro_use] extern crate human_panic;
 extern crate serde_json;
-extern crate cursive;
 
 use serde_json::Value;
 use std::process::Command;
-use ErrorKind::JsonBadCast;
-use cursive::views::SelectView;
-use cursive::align::HAlign;
-use cursive::views::OnEventView;
-use cursive::event::EventResult;
-use cursive::views::Dialog;
-use cursive::Cursive;
-use cursive::views::TextView;
-use cursive::traits::Boxable;
+use ErrorKind::JsonCastError;
+use std::io;
+use std::io::Write;
 
 error_chain!{
     foreign_links {
@@ -25,7 +16,7 @@ error_chain!{
     }
 
     errors {
-        JsonBadCast(key: &'static str) {
+        JsonCastError(key: &'static str) {
             description("invalid JSON cast")
             display("invalid cast used on JSON node: '{}'", key)
         }
@@ -35,7 +26,7 @@ error_chain!{
 fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
     let targets = &meta_data["packages"][0]["targets"];
 
-    let target_names = targets.as_array().ok_or(JsonBadCast("targets"))?.into_iter()
+    let target_names = targets.as_array().ok_or(JsonCastError("targets"))?.into_iter()
         .filter_map(|t| {
             if t["kind"].as_array().unwrap().into_iter()
                 .map(|x| x.as_str())
@@ -51,52 +42,67 @@ fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
     Ok(target_names)
 }
 
-// Let's put the callback in a separate function to keep it clean,
-// but it's not required.
-fn show_next_window(siv: &mut Cursive, city: &str) {
-    siv.pop_layer();
-    let text = format!("Selected: {}.", city);
-    siv.add_layer(
-        Dialog::around(TextView::new(text)).button("Quit", |s| s.quit()),
-    );
+fn read_line(prompt: &str) -> Result<String> {
+    print!("{}", prompt);
+
+    io::stdout().flush()?;
+
+    let mut line = String::new();
+
+    io::stdin().read_line(&mut line)?;
+
+    Ok(line.trim().into())
 }
 
 fn list_examples(meta_data: &Value) -> Result<()> {
     let examples = get_example_names(meta_data)?;
 
-    for example in &examples {
-        println!("{}", example);
+    for (i, example) in examples.iter().enumerate() {
+        println!("{}) {}", i+1, example);
     }
 
-    let mut select = SelectView::new().h_align(HAlign::Center);
+    println!("q) Quit");
 
-    select.add_all_str(examples);
+    loop {
 
-    // Sets the callback for when "Enter" is pressed.
-    select.set_on_submit(show_next_window);
+        let choice = read_line("Enter choice: ");
 
-    // Let's override the `j` and `k` keys for navigation
-    let select = OnEventView::new(select)
-        .on_pre_event_inner('k', |s| {
-            s.select_up(1);
-            Some(EventResult::Consumed(None))
-        })
-        .on_pre_event_inner('j', |s| {
-            s.select_down(1);
-            Some(EventResult::Consumed(None))
-        });
+        if let Ok(choice) = choice {
+            if choice == "q" || choice == "Q" {
+                println!("Bye.");
+                break;
+            }
 
-    let mut siv = Cursive::default();
+            if let Ok(index) = choice.parse::<usize>() {
+                if let Some(example) = examples.get(index-1) {
+                    build_and_run_example(example)?;
+                    break;
+                }
+            }
+            else {
+                println!("Bad choice, try again.");
+            }
+        }
+    }
 
-    // Let's add a BoxView to keep the list at a reasonable size
-    // (it can scroll anyway).
-    siv.add_layer(
-        Dialog::around(select.max_width(50))
-            .title("Run example ...")
-            .button("Quit", |s| s.quit())
-    );
+    Ok(())
+}
 
-    siv.run();
+fn build_and_run_example(example: &str) -> Result<()> {
+    let cargo_path = env!("CARGO");
+
+    let status = Command::new(cargo_path)
+        .arg("run")
+        .arg("--release")
+        .arg("--example").arg(example)
+        .status()?;
+
+    if !status.success() {
+        match status.code() {
+            Some(exit_code) => eprintln!("Bad cargo exit code: {}", exit_code),
+            None => eprintln!("[cargo demo] Process terminated by signal"),
+        }
+    }
 
     Ok(())
 }
