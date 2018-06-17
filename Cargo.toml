@@ -5,4 +5,4 @@ authors = ["Sandeep Datta <datta.sandeep@gmail.com>"]
 
 [dependencies]
 error-chain = "0.11"
-json = "0.11"
+serde_json= "1.0"
