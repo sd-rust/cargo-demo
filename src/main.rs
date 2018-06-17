@@ -3,10 +3,19 @@ extern crate error_chain;
 #[macro_use]
 extern crate human_panic;
 extern crate serde_json;
+extern crate cursive;
 
 use serde_json::Value;
 use std::process::Command;
 use ErrorKind::JsonBadCast;
+use cursive::views::SelectView;
+use cursive::align::HAlign;
+use cursive::views::OnEventView;
+use cursive::event::EventResult;
+use cursive::views::Dialog;
+use cursive::Cursive;
+use cursive::views::TextView;
+use cursive::traits::Boxable;
 
 error_chain!{
     foreign_links {
@@ -18,7 +27,7 @@ error_chain!{
     errors {
         JsonBadCast(key: &'static str) {
             description("invalid JSON cast")
-            display("invalid cast used on JSON key: '{}'", key)
+            display("invalid cast used on JSON node: '{}'", key)
         }
     }
 }
@@ -42,12 +51,51 @@ fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
     Ok(target_names)
 }
 
+// Let's put the callback in a separate function to keep it clean,
+// but it's not required.
+fn show_next_window(siv: &mut Cursive, city: &str) {
+    siv.pop_layer();
+    let text = format!("Selected: {}.", city);
+    siv.add_layer(
+        Dialog::around(TextView::new(text)).button("Quit", |s| s.quit()),
+    );
+}
+
 fn list_examples(meta_data: &Value) -> Result<()>{
     let examples = get_example_names(meta_data)?;
 
     for example in &examples {
         println!("{}", example);
     }
+
+    let mut select = SelectView::new().h_align(HAlign::Center);
+
+    select.add_all_str(examples);
+
+    // Sets the callback for when "Enter" is pressed.
+    select.set_on_submit(show_next_window);
+
+    // Let's override the `j` and `k` keys for navigation
+    let select = OnEventView::new(select)
+        .on_pre_event_inner('k', |s| {
+            s.select_up(1);
+            Some(EventResult::Consumed(None))
+        })
+        .on_pre_event_inner('j', |s| {
+            s.select_down(1);
+            Some(EventResult::Consumed(None))
+        });
+
+    let mut siv = Cursive::default();
+
+    // Let's add a BoxView to keep the list at a reasonable size
+    // (it can scroll anyway).
+    siv.add_layer(
+        Dialog::around(select.fixed_size((20, 10)))
+            .title("Run example ..."),
+    );
+
+    siv.run();
 
     Ok(())
 }
