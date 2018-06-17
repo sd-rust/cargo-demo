@@ -1,0 +1,1 @@
+A user friendly command line interface for running examples in any Cargo crate. 
