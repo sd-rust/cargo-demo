@@ -92,7 +92,8 @@ fn list_examples(meta_data: &Value) -> Result<()>{
     // (it can scroll anyway).
     siv.add_layer(
         Dialog::around(select.fixed_size((20, 10)))
-            .title("Run example ..."),
+            .title("Run example ...")
+            .button("Quit", |s| s.quit())
     );
 
     siv.run();
