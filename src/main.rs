@@ -4,9 +4,10 @@ extern crate serde_json;
 
 use serde_json::Value;
 use std::process::Command;
-use ErrorKind::JsonCastError;
+use ErrorKind::{JsonCastError, UserQuit};
 use std::io;
 use std::io::Write;
+use std::env;
 
 error_chain!{
     foreign_links {
@@ -20,10 +21,14 @@ error_chain!{
             description("invalid JSON cast")
             display("invalid cast used on JSON node: '{}'", key)
         }
+        UserQuit {
+            description("User quit")
+            display("User quit")
+        }
     }
 }
 
-fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
+fn get_example_names(meta_data: &Value) -> Result<Vec<Option<String>>> {
     let targets = &meta_data["packages"][0]["targets"];
 
     let target_names = targets.as_array().ok_or(JsonCastError("targets"))?.into_iter()
@@ -37,6 +42,7 @@ fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
                 None
             }
         })
+        .map(Some)
         .collect();
 
     Ok(target_names)
@@ -54,14 +60,18 @@ fn read_line(prompt: &str) -> Result<String> {
     Ok(line.trim().into())
 }
 
-fn list_examples(meta_data: &Value) -> Result<()> {
+fn get_chosen_example_name(meta_data: &Value) -> Result<String> {
     let examples = get_example_names(meta_data)?;
 
-    for (i, example) in examples.iter().enumerate() {
-        println!("{}) {}", i+1, example);
+    println!("q) Quit");
+
+    for (i, optional_example) in examples.iter().enumerate() {
+        if let Some(example) = optional_example {
+            println!("{}) {}", i+1, example);
+        }
     }
 
-    println!("q) Quit");
+    let mut examples = examples;
 
     loop {
 
@@ -69,14 +79,12 @@ fn list_examples(meta_data: &Value) -> Result<()> {
 
         if let Ok(choice) = choice {
             if choice == "q" || choice == "Q" {
-                println!("Bye.");
-                break;
+                return Err(UserQuit.into());
             }
 
             if let Ok(index) = choice.parse::<usize>() {
-                if let Some(example) = examples.get(index-1) {
-                    build_and_run_example(example)?;
-                    break;
+                if let Some(example) = examples[index-1].take() {
+                    return Ok(example);
                 }
             }
             else {
@@ -84,16 +92,14 @@ fn list_examples(meta_data: &Value) -> Result<()> {
             }
         }
     }
-
-    Ok(())
 }
 
-fn build_and_run_example(example: &str) -> Result<()> {
+fn build_and_run_example(example: &str, extra_args: &Vec<String>) -> Result<()> {
     let cargo_path = env!("CARGO");
 
     let status = Command::new(cargo_path)
         .arg("run")
-        .arg("--release")
+        .args(extra_args)
         .arg("--example").arg(example)
         .status()?;
 
@@ -125,6 +131,10 @@ fn get_crate_metadata() -> Result<Value> {
 fn main() -> Result<()> {
     setup_panic!();
 
+    let extra_args: Vec<String> = env::args().skip(2).collect();
+
+    println!("extra_args: {:?}", extra_args);
+
     let meta_data = get_crate_metadata();
 
     if let Err(ref e) = &meta_data {
@@ -135,5 +145,14 @@ fn main() -> Result<()> {
 
     let meta_data = meta_data?;
 
-    list_examples(&meta_data)
+    match get_chosen_example_name(&meta_data) {
+        Ok(ref example_name) => build_and_run_example(example_name, &extra_args),
+        Err(e) => match e.kind() {
+            ErrorKind::UserQuit => {
+                eprintln!("Bye!");
+                return Ok(());
+            }
+            _ => Err(e)
+        }
+    }
 }
