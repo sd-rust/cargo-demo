@@ -39,6 +39,16 @@ fn get_example_names(meta_data: &Value) -> Result<Vec<String>> {
     Ok(target_names)
 }
 
+fn list_examples(meta_data: &Value) -> Result<()>{
+    let examples = get_example_names(meta_data)?;
+
+    for example in &examples {
+        println!("{}", example);
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cargo_path = env!("CARGO");
 
@@ -56,11 +66,5 @@ fn main() -> Result<()> {
 
     let meta_data: Value = serde_json::from_str(&meta_data)?;
 
-    let examples = get_example_names(&meta_data)?;
-
-    for example in &examples {
-        println!("{}", example);
-    }
-
-    Ok(())
+    list_examples(&meta_data)
 }
